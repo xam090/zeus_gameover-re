@@ -8,7 +8,7 @@ import re
 import struct
 import random
 import socket
-import md5
+import hashlib
 import zlib
 
 
@@ -31,7 +31,7 @@ class ZeusGameover:
     PEER_ENTRY_LEN = 45
 
     # senderID and incoming rc4 key
-    SENDER_ID = "c9a370355e879b521171b90d22ea4f15f7b1b556".decode("hex")
+    SENDER_ID = bytes.fromhex("c9a370355e879b521171b90d22ea4f15f7b1b556")
 
     # max response packet size
     MAX_PACKET_SIZE = 4096
@@ -79,7 +79,7 @@ class ZeusGameover:
         # push  edi
         # mov   esi, ecx
         # push offset stru_406FC8
-        match = re.search("\x56\x57\xbf.{2}\x00\x00\x57\x8b\xf1\x68", self.memdump_data)
+        match = re.search(b"\x56\x57\xbf.{2}\x00\x00\x57\x8b\xf1\x68", self.memdump_data)
         if not match:
             raise ZeusGameoverError("get_memdump_config: config not found - no function match")
 
@@ -100,8 +100,8 @@ class ZeusGameover:
         plain = []
         for offset, enc_byte in enumerate(config):
             key_byte = xor_key[offset]
-            plain_byte = ord(enc_byte) ^ ord(key_byte)
-            plain.append(chr(plain_byte))
+            plain_byte = enc_byte ^ key_byte
+            plain.append(plain_byte)
 
         return plain
 
@@ -113,7 +113,7 @@ class ZeusGameover:
         key = []
 
         for section in self.pe.sections:
-            if section.Name.startswith(".reloc"):
+            if section.Name.startswith(b".reloc"):
                 key = self.memdump_data[section.VirtualAddress:section.VirtualAddress+config_len]
                 break
 
@@ -147,9 +147,9 @@ class ZeusGameover:
 
         # @TODO if we get too many, it would be worth integrating an asm module and matching on instructions
         # opcode case #1
-        code_offset = re.search(r"\x8d\x4c\x24(.{1})\xe8.{4}\x8d\x84\x24(.{4})\x6a", self.memdump_data)
+        code_offset = re.search(rb"\x8d\x4c\x24(.{1})\xe8.{4}\x8d\x84\x24(.{4})\x6a", self.memdump_data)
         # opcode case #2
-        code_offset2 = re.search(r"\x8d\x4c\x24(.{1})\xe8.{4}\x8d\x44\x24(.{1})\x6a", self.memdump_data)
+        code_offset2 = re.search(rb"\x8d\x4c\x24(.{1})\xe8.{4}\x8d\x44\x24(.{1})\x6a", self.memdump_data)
 
         if code_offset:
             x = struct.unpack("B", code_offset.groups()[0])[0]
@@ -193,7 +193,7 @@ class ZeusGameover:
         # push  14h
         # lea   edi, [esp+11bh]
 
-        code_offset = re.search(r"\x8d\x8c\x24(.{4})\xe8.{4}\x6a.{1}\x8d\xbc\x24(.{4})", self.memdump_data)
+        code_offset = re.search(rb"\x8d\x8c\x24(.{4})\xe8.{4}\x6a.{1}\x8d\xbc\x24(.{4})", self.memdump_data)
 
         x = struct.unpack("I", code_offset.groups()[0])[0]
         y = struct.unpack("I", code_offset.groups()[1])[0]
@@ -210,13 +210,13 @@ class ZeusGameover:
 
         peer_entry = data[offset:offset+self.PEER_ENTRY_LEN]
 
-        key = "".join(peer_entry[0x1:0x1+0x14])
+        key =  bytes(peer_entry[0x1:0x1+0x14])
         peer["key"] = key
 
-        ip = ".".join(["%s" % ord(byte) for byte in peer_entry[0x15:0x15+0x4]])
+        ip = ".".join([str(byte) for byte in peer_entry[0x15:0x15+0x4]])
         peer["ip"] = ip
 
-        port = struct.unpack("H", "".join(peer_entry[0x19:0x19+0x2]))[0]
+        port = struct.unpack("H", bytes(peer_entry[0x19:0x19+0x2]))[0]
         peer["port"] = port
 
         if not quick:
@@ -235,7 +235,7 @@ class ZeusGameover:
         p2p_header, junk_size = self.get_p2p_header(0x00)
 
         # 0x00 cmd
-        data = ""
+        data = b""
 
         junk = self.get_junk(junk_size)
 
@@ -322,7 +322,7 @@ class ZeusGameover:
         #for i in range(20):                     # SSID, 20 bytes
         #    ssid_byte = random.randint(0, 255)
         #    header += struct.pack("B", ssid_byte)
-        header += "\xbb\x8c\x79\xa8\x5a\xf1\xe1\x94\xe0\x19\xae\x72\x56\x68\xfc\x1b\x42\xf7\xda\x3a"    # @TODO rand_byte, ttl, and ssid are related somehow, use hardcoded for now
+        header += b"\xbb\x8c\x79\xa8\x5a\xf1\xe1\x94\xe0\x19\xae\x72\x56\x68\xfc\x1b\x42\xf7\xda\x3a"    # @TODO rand_byte, ttl, and ssid are related somehow, use hardcoded for now
 
         header += self.SENDER_ID     # senderID, 20 bytes
 
@@ -333,7 +333,7 @@ class ZeusGameover:
         """
         get junk bytes
         """
-        junk = ""
+        junk = b""
         for i in range(junk_size):      # junk_size junk bytes
             junk_byte = random.randint(0, 255)
             junk += struct.pack("B", junk_byte)
@@ -352,7 +352,7 @@ class ZeusGameover:
 
         for byte in in_buf:
             (i, j, S, K) = self.prga(i, j, S)
-            new_byte = ord(byte) ^ K
+            new_byte = byte ^ K
             out_buf.append(chr(new_byte))
 
         return "".join(out_buf)
@@ -385,7 +385,7 @@ class ZeusGameover:
         j = 0 
         for i in range(256):
             # equal: j = (j + S[i] + ord(key[i % len(key)])) & 255
-            j = (j + S[i] + ord(key[i % len(key)])) % 256 
+            j = (j + S[i] + (key[i % len(key)])) % 256 
             S = self.swap(S, i, j)
 
         return S
@@ -445,7 +445,7 @@ class ZeusGameover:
             raise ZeusGameoverError("parse_config_response: bad config length")
 
         # md5 check
-        calculated_hash_of_conf = "%04x%04x%04x%04x" % struct.unpack(">IIII", md5.new("".join(plain[48:len(plain)-256])).digest())
+        calculated_hash_of_conf = "%04x%04x%04x%04x" % struct.unpack(">IIII", hashlib.md5("".join(plain[48:len(plain)-256])).digest())
         hash_of_conf = "%04x%04x%04x%04x" % struct.unpack(">IIII", "".join(plain[32:32+16]))
         if calculated_hash_of_conf != hash_of_conf:
             raise ZeusGameoverError("parse_config_response: bad md5 check")
@@ -586,7 +586,7 @@ class ZeusGameover:
         p2p_header, junk_size = self.get_p2p_header(0x02)
 
         # 0x02 cmd
-        data = peer["key"]      # reqID, 20 bytes
+        data = bytes(peer["key"])     # reqID, 20 bytes
 
         for i in range(8):      # randomFill, 8 bytes
             random_fill = random.randint(1, 255)        # non-zero random bytes
@@ -643,8 +643,7 @@ class ZeusGameover:
         """
         entry = []
 
-        entry += ["    ip: %s, udp port: %d, rc4 key: %s" % \
-            (peer["ip"], peer["port"], "".join(peer["key"]).encode('hex'))]
+        entry += [f"    ip: {peer['ip']}, udp port: {peer['port']}, rc4 key: {peer['key'].hex()}"]
 
         if "binary_ver" in peer:
             entry += ["    binary version: %d, config version: %d, tcp port: %d" % \
@@ -667,7 +666,7 @@ if __name__ == "__main__":
     try:
         zeus_gameover = ZeusGameover(memdump)
     except ZeusGameoverError as msg:
-        print "Error: %s" % msg
+        print("Error: %s" % msg)
         sys.exit(1)
 
     static_peers = zeus_gameover.get_static_peers_list()
@@ -675,7 +674,7 @@ if __name__ == "__main__":
     for i, peer in enumerate(static_peers):
         formatted += ["static peer #%d" % (i+1)]
         formatted += zeus_gameover.format_peer_entry(peer)
-    print "\n".join(formatted)
+    print("\n".join(formatted))
 
     # save configs
     for peer in static_peers:
@@ -690,4 +689,4 @@ if __name__ == "__main__":
     for i, peer in enumerate(peers):
         formatted += ["peer #%d" % (i+1)]
         formatted += zeus_gameover.format_peer_entry(peer)
-    print "\n".join(formatted)
+    print("\n".join(formatted))
